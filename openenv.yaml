@@ -1,0 +1,17 @@
+metadata:
+  name: "ticket-triage-v1"
+  version: "1.0.0"
+  description: "Customer Support Ticket Triage simulator for LLM Agents."
+entrypoint:
+  server_url: "localhost:7860"
+  client_module: "client:TicketTriageClient"
+tasks:
+  - id: 1
+    name: "Task 1: Basic Routing"
+    difficulty: "easy"
+  - id: 2
+    name: "Task 2: VIP Refunds"
+    difficulty: "medium"
+  - id: 3
+    name: "Task 3: Anger Escalation"
+    difficulty: "hard"
