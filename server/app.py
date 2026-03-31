@@ -59,3 +59,11 @@ def root():
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return {"status": f"UI file missing at {index_path}"}
+
+def main():
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("server.app:app", host="0.0.0.0", port=port, reload=True)
+
+if __name__ == "__main__":
+    main()
