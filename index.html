@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trust & Safety Ticket Triage</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --panel-bg: rgba(30, 41, 59, 0.7);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #3b82f6;
+            --border: rgba(255, 255, 255, 0.1);
+            --success: #10b981;
+            --error: #ef4444;
+            --warning: #f59e0b;
+            --purple: #8b5cf6;
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Inter', sans-serif;
+            background: radial-gradient(circle at top right, #1e1b4b, var(--bg-color));
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        header {
+            width: 100%;
+            padding: 1.5rem 2rem;
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-sizing: border-box;
+        }
+
+        h1 { margin: 0; font-size: 1.5rem; font-weight: 600; }
+        
+        .controls { display: flex; gap: 1rem; }
+        select, button { padding: 0.5rem 1rem; border-radius: 0.5rem; border: 1px solid var(--border); background: var(--panel-bg); color: white; cursor: pointer;}
+        button { background: var(--accent); border:none; font-weight:600;}
+        button:hover { filter: brightness(1.2); }
+
+        .game-board {
+            margin-top: 3rem;
+            width: 100%;
+            max-width: 600px;
+            display: none;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        /* Ticket Card */
+        .ticket-card {
+            background: var(--panel-bg);
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            padding: 2rem;
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .ticket-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; height: 4px;
+            background: linear-gradient(90deg, var(--accent), var(--purple));
+        }
+
+        .ticket-header { display: flex; justify-content: space-between; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;}
+        .tier-badge { background: var(--purple); color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 0.8rem;}
+        .tier-Standard { background: var(--text-muted); }
+        .tier-VIP { background: var(--warning); color: #000; }
+
+        .ticket-message { font-size: 1.4rem; line-height: 1.5; font-weight: 500; margin-bottom: 2rem; }
+
+        /* Action Buttons */
+        .action-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .action-btn {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--border);
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-main);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .action-btn:hover { background: rgba(255,255,255,0.1); transform: scale(1.02); border-color: var(--accent); }
+        .action-btn:active { transform: scale(0.98); }
+
+        .btn-billing:hover { border-color: var(--success); color: var(--success); }
+        .btn-tech:hover { border-color: var(--accent); color: var(--accent); }
+        .btn-refund:hover { border-color: var(--purple); color: var(--purple); }
+        .btn-escalate:hover { border-color: var(--error); color: var(--error); }
+
+        /* Status Bar */
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            background: var(--panel-bg);
+            padding: 1rem 1.5rem;
+            border-radius: 0.75rem;
+            border: 1px solid var(--border);
+            align-items: center;
+        }
+
+        .feedback { font-weight: 500; transition: color 0.3s; }
+        .score { font-size: 1.5rem; font-weight: bold; color: var(--success); }
+
+        #initial-state { margin-top: 5rem; text-align: center; color: var(--text-muted); }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>🎧 Support Ticket Triage</h1>
+        <div class="controls">
+            <select id="task-select">
+                <option value="1">Task 1: Basic Routing</option>
+                <option value="2">Task 2: VIP Refunds</option>
+                <option value="3">Task 3: Anger Escalation</option>
+            </select>
+            <button onclick="startTask()">Start Shift</button>
+        </div>
+    </header>
+
+    <div id="initial-state">
+        <h2>Select a task and click Start Shift to begin grading.</h2>
+        <p>Resolve customer tickets with a single click. Score 1.0 to pass the evaluation.</p>
+    </div>
+
+    <div class="game-board" id="main-ui">
+        
+        <div class="status-bar">
+            <div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);">Queue</div>
+                <div id="queue-count" style="font-weight: bold;">5 tickets remaining</div>
+            </div>
+            <div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);">Score</div>
+                <div class="score" id="score-val">0.00</div>
+            </div>
+        </div>
+
+        <div id="feedback-msg" class="feedback" style="text-align: center; height: 24px;"></div>
+
+        <div class="ticket-card" id="ticket-container">
+            <div class="ticket-header">
+                <span id="ticket-id">#T00</span>
+                <span id="ticket-tier" class="tier-badge tier-Standard">Standard</span>
+            </div>
+            <div class="ticket-message" id="ticket-msg">
+                "Loading ticket..."
+            </div>
+
+            <div class="action-grid" id="action-buttons">
+                <button class="action-btn btn-billing" onclick="submitAction('ROUTE_BILLING')">💳 Route Billing</button>
+                <button class="action-btn btn-tech" onclick="submitAction('ROUTE_TECH')">💻 Route Tech</button>
+                <button class="action-btn btn-refund" onclick="submitAction('REFUND_USER')">💰 Refund User</button>
+                <button class="action-btn btn-escalate" onclick="submitAction('ESCALATE_TO_HUMAN')">🚨 Escalate Human</button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let isDone = false;
+
+        async function startTask() {
+            const taskId = document.getElementById('task-select').value;
+            isDone = false;
+            document.getElementById('feedback-msg').innerText = "Game Started!";
+            document.getElementById('feedback-msg').style.color = "var(--text-main)";
+
+            try {
+                const res = await fetch(`${API_BASE}/reset`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ task_id: parseInt(taskId) })
+                });
+                const data = await res.json();
+                
+                document.getElementById('initial-state').style.display = 'none';
+                document.getElementById('main-ui').style.display = 'flex';
+                
+                renderObservation(data.observation);
+            } catch (err) {
+                alert('Error connecting to Server.');
+            }
+        }
+
+        async function submitAction(type) {
+            if (isDone) return;
+            
+            // UI animation feedback
+            const card = document.getElementById('ticket-container');
+            card.style.transform = 'scale(0.95)';
+            setTimeout(() => card.style.transform = 'scale(1)', 150);
+
+            try {
+                const res = await fetch(`${API_BASE}/step`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action_type: type })
+                });
+                const data = await res.json();
+                
+                if (data.done) isDone = true;
+                renderObservation(data.observation, data.done);
+                
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        function renderObservation(obs, done = false) {
+            document.getElementById('score-val').innerText = (obs.reward_signal || 0).toFixed(2);
+            document.getElementById('queue-count').innerText = `${obs.tickets_remaining} tickets remaining`;
+            
+            const fMsg = document.getElementById('feedback-msg');
+            fMsg.innerText = obs.last_feedback || "";
+            if (obs.last_feedback.includes("✅")) {
+                fMsg.style.color = "var(--success)";
+            } else if (obs.last_feedback.includes("❌")) {
+                fMsg.style.color = "var(--error)";
+            }
+
+            if (done || !obs.current_ticket) {
+                document.getElementById('ticket-msg').innerHTML = "<div style='text-align:center; color: var(--success); font-weight: bold;'>🎉 Shift Complete!</div>";
+                document.getElementById('ticket-id').innerText = "";
+                document.getElementById('ticket-tier').style.display = 'none';
+                document.getElementById('action-buttons').style.opacity = '0.3';
+                document.getElementById('action-buttons').style.pointerEvents = 'none';
+                return;
+            }
+
+            const t = obs.current_ticket;
+            document.getElementById('ticket-msg').innerText = `"${t.message}"`;
+            document.getElementById('ticket-id').innerText = `#${t.ticket_id}`;
+            document.getElementById('ticket-tier').innerText = t.tier;
+            document.getElementById('ticket-tier').className = `tier-badge tier-${t.tier}`;
+            
+            document.getElementById('action-buttons').style.opacity = '1';
+            document.getElementById('action-buttons').style.pointerEvents = 'auto';
+            document.getElementById('ticket-tier').style.display = 'block';
+        }
+    </script>
+</body>
+</html>
