@@ -53,7 +53,9 @@ def info():
 @app.get("/")
 def root():
     import os
-    index_path = os.path.join(cwd, "index.html")
+    # Dynamically find the root directory relative to this file
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    index_path = os.path.join(base_dir, "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)
-    return {"status": "UI file missing"}
+    return {"status": f"UI file missing at {index_path}"}
