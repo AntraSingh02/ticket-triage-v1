@@ -12,18 +12,13 @@ from server.models import TicketAction, ActionType
 # ENV_URL          : URL of the running OpenEnv server (default: local)
 # LOCAL_IMAGE_NAME : Optional – Docker image name used with from_docker_image()
 # ─────────────────────────────────────────────────────────────────────────────
-# Ensure these keys exist in os.environ so local runs don't crash with KeyError,
-# while still satisfying the validator's strict syntax checks.
-if "API_BASE_URL" not in os.environ:
-    os.environ["API_BASE_URL"] = "https://generativelanguage.googleapis.com/v1beta/openai/"
-
-if "API_KEY" not in os.environ:
-    os.environ["API_KEY"] = os.environ.get("HF_TOKEN", "dummy")
+# ── Environment Variables ───────────────────────────────────────────────────
+# The validator injects API_BASE_URL and API_KEY.
+# For local testing, please ensure you export these in your terminal first.
+# ─────────────────────────────────────────────────────────────────────────────
 
 MODEL_NAME       = os.environ.get("MODEL_NAME", "gemini-2.5-flash")
 ENV_URL          = os.environ.get("ENV_URL", "http://127.0.0.1:8000")
-
-# Optional – only needed if you use from_docker_image()
 LOCAL_IMAGE_NAME = os.environ.get("LOCAL_IMAGE_NAME")
 
 TASK_NAMES = {
@@ -83,25 +78,21 @@ def run_task(client, task_id: int):  # client may be None if init failed
     for step in range(15):
         prompt = f"Observation:\n{json.dumps(obs, indent=2)}\n\nWhat is your next action JSON?"
 
-        try:
-            if client is None:
-                raise RuntimeError("OpenAI client not available")
-            completion = client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.0
-            )
-            response_text = completion.choices[0].message.content.strip()
-            if response_text.startswith("```json"):
-                response_text = response_text[7:-3].strip()
-            elif response_text.startswith("```"):
-                response_text = response_text[3:-3].strip()
-        except Exception as e:
-            print(f"LLM API Error: {e}", flush=True)
-            response_text = '{"action_type": "ROUTE_TECH"}'
+        if client is None:
+            raise RuntimeError("OpenAI client not available")
+        completion = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.0
+        )
+        response_text = completion.choices[0].message.content.strip()
+        if response_text.startswith("```json"):
+            response_text = response_text[7:-3].strip()
+        elif response_text.startswith("```"):
+            response_text = response_text[3:-3].strip()
 
         action = parse_model_action(response_text)
 
@@ -129,14 +120,8 @@ def run_task(client, task_id: int):  # client may be None if init failed
     return reward
 
 def main():
-    # Attempt client init — failure is non-fatal; run_task() has an LLM fallback
-    # so [START]/[STEP]/[END] blocks are ALWAYS emitted regardless.
-    client = None
-    try:
-        client = OpenAI(base_url=os.environ["API_BASE_URL"], api_key=os.environ["API_KEY"])
-    except Exception as e:
-        print(f"Warning: Failed to initialize OpenAI client: {e}", flush=True)
-        print("Continuing with fallback actions to ensure structured output.", flush=True)
+    # The validator requires EXACTLY this initialization:
+    client = OpenAI(base_url=os.environ["API_BASE_URL"], api_key=os.environ["API_KEY"])
 
     total_score = 0.0
     for task_id in [1, 2, 3]:
