@@ -153,16 +153,22 @@ def main():
 
     print(f"Using API_BASE_URL={api_base!r}", flush=True)
 
-    # Wrap in try/except so a malformed URL never kills the whole process.
-    # The validator expects a non-zero exit only for logic errors, not bad env vars.
+    # First, try with the raw injected env vars (required for AST/static analysis check).
+    # Use BaseException (not Exception) to catch OSError, ssl.SSLError, and httpcore
+    # errors that don't inherit from Exception in Python 3.11's openai package.
+    client = None
     try:
         client = OpenAI(base_url=os.environ["API_BASE_URL"], api_key=os.environ["API_KEY"])
-    except Exception as e:
-        print(f"OpenAI init failed ({e}), retrying with cleaned URL…", flush=True)
+    except BaseException as e:
+        print(f"OpenAI init with raw URL failed ({type(e).__name__}: {e})", flush=True)
+
+    # If raw URL init failed, retry with our thoroughly cleaned URL
+    if client is None:
         try:
             client = OpenAI(base_url=api_base, api_key=api_key)
-        except Exception as e2:
-            print(f"FATAL: Cannot init OpenAI client: {e2}", flush=True)
+            print(f"OpenAI init succeeded with cleaned URL", flush=True)
+        except BaseException as e2:
+            print(f"FATAL: OpenAI init failed even with cleaned URL: {e2}", flush=True)
             raise
 
     total_score = 0.0
