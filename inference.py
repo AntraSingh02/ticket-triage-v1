@@ -5,14 +5,15 @@ from openai import OpenAI
 from server.models import TicketAction, ActionType
 
 # ── Environment Variables ───────────────────────────────────────────────────
-# API_BASE_URL     : LLM API base URL (OpenAI-compatible)
-# HF_TOKEN         : Hugging Face token (required, no default)
+# API_BASE_URL     : LLM proxy base URL  — injected by validator (required)
+# API_KEY          : LLM proxy API key   — injected by validator (required)
+# HF_TOKEN         : Fallback key for HF Spaces when API_KEY is not set
 # MODEL_NAME       : Model to use for ticket classification
 # ENV_URL          : URL of the running OpenEnv server (default: local)
 # LOCAL_IMAGE_NAME : Optional – Docker image name used with from_docker_image()
 # ─────────────────────────────────────────────────────────────────────────────
-API_BASE_URL     = os.getenv("API_BASE_URL",  "https://generativelanguage.googleapis.com/v1beta/openai/")
-HF_TOKEN         = os.getenv("HF_TOKEN")                        # No default – must be set in environment
+API_BASE_URL     = os.getenv("API_BASE_URL")                     # No default – must be injected by validator
+API_KEY          = os.getenv("API_KEY") or os.getenv("HF_TOKEN") # validator injects API_KEY; HF_TOKEN as fallback
 MODEL_NAME       = os.getenv("MODEL_NAME",    "gemini-2.5-flash")
 ENV_URL          = os.getenv("ENV_URL",        "http://127.0.0.1:8000")
 
@@ -126,7 +127,7 @@ def main():
     # so [START]/[STEP]/[END] blocks are ALWAYS emitted regardless.
     client = None
     try:
-        client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
+        client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
     except Exception as e:
         print(f"Warning: Failed to initialize OpenAI client: {e}", flush=True)
         print("Continuing with fallback actions to ensure structured output.", flush=True)
