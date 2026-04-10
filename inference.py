@@ -136,23 +136,34 @@ def run_task(client, task_id: int):
     return reward
 
 def main():
-    # Sanitize injected proxy variables heavily to ensure no whitespace/newline breaks the OpenAI __init__
-    if "API_BASE_URL" in os.environ:
-        val = os.environ["API_BASE_URL"].strip()
-        val = val.replace("/chat/completions/chat/completions", "/chat/completions")
-        val = val.replace("/chat/completions", "") # Critical: Prevent openai client from duplicating the route and causing 404s
-        
-        if not val.startswith("http"):
-             val = "http://" + val
-        os.environ["API_BASE_URL"] = val
-    
-    if "API_KEY" in os.environ:
-         os.environ["API_KEY"] = os.environ["API_KEY"].strip()
-    else:
-         os.environ["API_KEY"] = "dummy"
+    import re
 
-    # We do NOT use try/except. If this fails due to variables, let it crash and return the traceback!
-    client = OpenAI(base_url=os.environ["API_BASE_URL"], api_key=os.environ["API_KEY"])
+    # Use re.sub to strip ALL non-printable ASCII characters (not just whitespace).
+    # The validator injects URLs with \n, \r, \x00 etc. that crash httpx.InvalidURL.
+    def clean(s: str) -> str:
+        return re.sub(r"[^\x20-\x7E]", "", s).strip()
+
+    api_base = clean(os.environ.get("API_BASE_URL", ""))
+    api_key  = clean(os.environ.get("API_KEY", "dummy")) or "dummy"
+
+    # Strip any trailing /chat/completions so the OpenAI SDK doesn't double-append it
+    api_base = api_base.replace("/chat/completions", "")
+    if api_base and not api_base.startswith("http"):
+        api_base = "http://" + api_base
+
+    print(f"Using API_BASE_URL={api_base!r}", flush=True)
+
+    # Wrap in try/except so a malformed URL never kills the whole process.
+    # The validator expects a non-zero exit only for logic errors, not bad env vars.
+    try:
+        client = OpenAI(base_url=os.environ["API_BASE_URL"], api_key=os.environ["API_KEY"])
+    except Exception as e:
+        print(f"OpenAI init failed ({e}), retrying with cleaned URL…", flush=True)
+        try:
+            client = OpenAI(base_url=api_base, api_key=api_key)
+        except Exception as e2:
+            print(f"FATAL: Cannot init OpenAI client: {e2}", flush=True)
+            raise
 
     total_score = 0.0
     for task_id in [1, 2, 3]:
