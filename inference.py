@@ -50,7 +50,7 @@ def parse_model_action(response_text: str) -> TicketAction:
         print(f"Failed to parse model response. Error: {e}", flush=True)
         return TicketAction(action_type=ActionType.ROUTE_TECH)
 
-def run_task(client: OpenAI, task_id: int):
+def run_task(client, task_id: int):  # client may be None if init failed
     task_name = TASK_NAMES.get(task_id, f"task_{task_id}")
 
     # --- Reset environment ---
@@ -77,6 +77,8 @@ def run_task(client: OpenAI, task_id: int):
         prompt = f"Observation:\n{json.dumps(obs, indent=2)}\n\nWhat is your next action JSON?"
 
         try:
+            if client is None:
+                raise RuntimeError("OpenAI client not available")
             completion = client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=[
@@ -120,11 +122,14 @@ def run_task(client: OpenAI, task_id: int):
     return reward
 
 def main():
+    # Attempt client init — failure is non-fatal; run_task() has an LLM fallback
+    # so [START]/[STEP]/[END] blocks are ALWAYS emitted regardless.
+    client = None
     try:
         client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
     except Exception as e:
-        print(f"Failed to initialize OpenAI client: {e}", flush=True)
-        return
+        print(f"Warning: Failed to initialize OpenAI client: {e}", flush=True)
+        print("Continuing with fallback actions to ensure structured output.", flush=True)
 
     total_score = 0.0
     for task_id in [1, 2, 3]:
