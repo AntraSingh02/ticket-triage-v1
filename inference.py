@@ -4,10 +4,20 @@ import requests
 from openai import OpenAI
 from server.models import TicketAction, ActionType
 
-API_BASE_URL = os.getenv("API_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/")
-API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY", "dummy")
-MODEL_NAME = os.getenv("MODEL_NAME", "gemini-2.5-flash")
-ENV_URL = os.getenv("ENV_URL", "http://127.0.0.1:8000")
+# ── Environment Variables ───────────────────────────────────────────────────
+# API_BASE_URL     : LLM API base URL (OpenAI-compatible)
+# HF_TOKEN         : Hugging Face token (required, no default)
+# MODEL_NAME       : Model to use for ticket classification
+# ENV_URL          : URL of the running OpenEnv server (default: local)
+# LOCAL_IMAGE_NAME : Optional – Docker image name used with from_docker_image()
+# ─────────────────────────────────────────────────────────────────────────────
+API_BASE_URL     = os.getenv("API_BASE_URL",  "https://generativelanguage.googleapis.com/v1beta/openai/")
+HF_TOKEN         = os.getenv("HF_TOKEN")                        # No default – must be set in environment
+MODEL_NAME       = os.getenv("MODEL_NAME",    "gemini-2.5-flash")
+ENV_URL          = os.getenv("ENV_URL",        "http://127.0.0.1:8000")
+
+# Optional – only needed if you use from_docker_image()
+LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 
 TASK_NAMES = {
     1: "basic_routing",
@@ -111,7 +121,7 @@ def run_task(client: OpenAI, task_id: int):
 
 def main():
     try:
-        client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+        client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
     except Exception as e:
         print(f"Failed to initialize OpenAI client: {e}", flush=True)
         return
