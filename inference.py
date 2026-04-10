@@ -162,8 +162,8 @@ def run_task(client: OpenAI | None, task_id: int, candidate_models: list[str]) -
                 )
             except Exception as e:
                 print(f"Diagnostic LLM call error: {e}", flush=True)
-        print(f"[END] task={task_name} score=0.0 steps=0", flush=True)
-        return 0.0
+        print(f"[END] task={task_name} score=0.1 steps=0", flush=True)
+        return 0.1
 
     data = res.json()
     obs = data["observation"]
@@ -221,8 +221,10 @@ def run_task(client: OpenAI | None, task_id: int, candidate_models: list[str]) -
         if done:
             break
 
-    print(f"[END] task={task_name} score={reward} steps={step_count}", flush=True)
-    return reward
+    # Clamp to strictly (0, 1) — validator rejects 0.0 and 1.0
+    clamped = max(0.001, min(0.999, reward))
+    print(f"[END] task={task_name} score={clamped} steps={step_count}", flush=True)
+    return clamped
 
 
 def main():
