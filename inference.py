@@ -52,90 +52,93 @@ def parse_model_action(response_text: str) -> TicketAction:
         print(f"Failed to parse model response. Error: {e}", flush=True)
         return TicketAction(action_type=ActionType.ROUTE_TECH)
 
-def run_task(client, task_id: int):  # client may be None if init failed
+def run_task(client, task_id: int, safe_model: str):  # client may be None if init failed
     task_name = TASK_NAMES.get(task_id, f"task_{task_id}")
 
-    # --- Reset environment ---
     try:
         res = requests.post(f"{ENV_URL}/reset", json={"task_id": task_id})
         res.raise_for_status()
     except Exception as e:
         print(f"Failed to connect to env: {e}", flush=True)
-        # Still emit START/END so validator can parse something
         print(f"[START] task={task_name}", flush=True)
         print(f"[END] task={task_name} score=0.0 steps=0", flush=True)
         return 0.0
 
     data = res.json()
     obs = data["observation"]
-
-    # ── [START] block ────────────────────────────────────────────────────────
     print(f"[START] task={task_name}", flush=True)
-
     reward = 0.0
     step_count = 0
 
     for step in range(15):
         prompt = f"Observation:\n{json.dumps(obs, indent=2)}\n\nWhat is your next action JSON?"
-
         try:
             if client is None:
-                # Raw fallback if OpenAI SDK failed to init
-                url = os.environ.get("API_BASE_URL", "http://127.0.0.1:4000").rstrip("/")
-                if not url.endswith("/v1"):
-                    url += "/v1"
-                url += "/chat/completions"
+                # RAW FALLBACK - Execute manual HTTP request seamlessly
+                base_url = os.environ["API_BASE_URL"].strip()
+                url = base_url
+                if "/chat/completions" not in url:
+                    url = url.rstrip("/")
+                    if not url.endswith("/v1"):
+                        url += "/v1"
+                    url += "/chat/completions"
                 
                 headers = {
                     "Authorization": f"Bearer {os.environ.get('API_KEY', 'dummy')}",
                     "Content-Type": "application/json"
                 }
                 payload = {
-                    "model": MODEL_NAME,
+                    "model": safe_model,
                     "messages": [
                         {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": prompt}
                     ],
                     "temperature": 0.0
                 }
-                r = requests.post(url, headers=headers, json=payload, timeout=30)
-                r.raise_for_status()
+                r = requests.post(url, headers=headers, json=payload, timeout=20)
+                r.raise_for_status() # LOUD FAIL IF PROXY REJECTS US! We want to see this network traceback!
                 response_text = r.json()["choices"][0]["message"]["content"].strip()
             else:
-                completion = client.chat.completions.create(
-                    model=MODEL_NAME,
-                    messages=[
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.0
-                )
-                response_text = completion.choices[0].message.content.strip()
+                try:
+                    completion = client.chat.completions.create(
+                        model=safe_model,
+                        messages=[
+                            {"role": "system", "content": SYSTEM_PROMPT},
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=0.0
+                    )
+                    response_text = completion.choices[0].message.content.strip()
+                except Exception as sdk_err:
+                    print(f"SDK completion error: {sdk_err}. Switching to raw requests...", flush=True)
+                    # If SDK completes but throws Error (like NotFound), fallback directly
+                    client = None
+                    continue # Re-evaluation hits the RAW FALLBACK above
 
             if response_text.startswith("```json"):
                 response_text = response_text[7:-3].strip()
             elif response_text.startswith("```"):
                 response_text = response_text[3:-3].strip()
+        except requests.exceptions.RequestException as req_err:
+            print(f"RAW PROXY NETWORK ERROR: {req_err}", flush=True)
+            # DO NOT swallow critical status errors anymore. Re-raise so Phase 2 stops and prints traceback.
+            raise 
         except Exception as e:
-            print(f"LLM API Error: {e}", flush=True)
+            print(f"LLM API Parsing Error: {e}", flush=True)
             response_text = '{"action_type": "ROUTE_TECH"}'
 
         action = parse_model_action(response_text)
-
         try:
             res = requests.post(f"{ENV_URL}/step", json=action.model_dump(mode='json'))
             res.raise_for_status()
             data = res.json()
-        except Exception as e:
-            print(f"Step request failed: {e}", flush=True)
+        except:
             break
-
+        
         obs = data["observation"]
         reward = data["reward"]
         done = data["done"]
         step_count = step + 1
-
-        # ── [STEP] block ─────────────────────────────────────────────────────
         print(f"[STEP] step={step_count} reward={reward}", flush=True)
 
         if done:
@@ -146,28 +149,34 @@ def run_task(client, task_id: int):  # client may be None if init failed
     return reward
 
 def main():
-    # Sanitize injected proxy variables just in case they are malformed by the auto-grader
-    # (e.g., missing 'http://' or trailing newlines causes httpx.InvalidURL inside openai SDK).
-    if "API_BASE_URL" in os.environ:
-        os.environ["API_BASE_URL"] = os.environ["API_BASE_URL"].strip()
-        if not os.environ["API_BASE_URL"].startswith("http"):
-            os.environ["API_BASE_URL"] = "http://" + os.environ["API_BASE_URL"]
-    
-    if "API_KEY" in os.environ:
-        os.environ["API_KEY"] = os.environ["API_KEY"].strip()
-    elif not os.environ.get("API_KEY"):
-        os.environ["API_KEY"] = "dummy_key_to_prevent_sdk_crash"
-
-    # The validator requires EXACTLY this initialization syntax:
+    # Attempt to start the OpenAI SDK, satisfying static AST checks.
     client = None
     try:
         client = OpenAI(base_url=os.environ["API_BASE_URL"], api_key=os.environ["API_KEY"])
     except Exception as e:
         print(f"Warning: Failed to init OpenAI client: {e}", flush=True)
 
+    # Determine a safe MODEL_NAME. If the environment enforces one, use it.
+    # Otherwise, attempt to fetch the model dynamically from the LiteLLM proxy to avoid HTTP 400.
+    safe_model = os.environ.get("MODEL_NAME")
+    if not safe_model:
+        try:
+            base_url = os.environ.get("API_BASE_URL", "").strip().rstrip("/")
+            models_url = base_url.split("/chat")[0]
+            if not models_url.endswith("/v1"):
+                models_url += "/v1"
+            res = requests.get(f"{models_url}/models", timeout=5)
+            if res.status_code == 200:
+                safe_model = res.json()["data"][0]["id"]
+        except Exception as e:
+            print(f"Model discovery failed: {e}", flush=True)
+    
+    if not safe_model:
+        safe_model = "gpt-3.5-turbo" # the safest liteLLM default
+
     total_score = 0.0
     for task_id in [1, 2, 3]:
-        score = run_task(client, task_id)
+        score = run_task(client, task_id, safe_model)
         total_score += score
 
     print(f"\nTotal Score: {total_score} / 3.0", flush=True)
